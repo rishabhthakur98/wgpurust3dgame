@@ -5,6 +5,7 @@ use bytemuck::{Pod, Zeroable};
 pub struct Vertex {
     pub position: [f32; 3],
     pub color: [f32; 3], 
+    pub normal: [f32; 3], // The direction the face is pointing
 }
 
 impl Vertex {
@@ -14,7 +15,8 @@ impl Vertex {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute { offset: 0, shader_location: 0, format: wgpu::VertexFormat::Float32x3 },
-                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float32x3 }
+                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress, shader_location: 1, format: wgpu::VertexFormat::Float32x3 },
+                wgpu::VertexAttribute { offset: std::mem::size_of::<[f32; 6]>() as wgpu::BufferAddress, shader_location: 2, format: wgpu::VertexFormat::Float32x3 } 
             ],
         }
     }
@@ -22,4 +24,9 @@ impl Vertex {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod, Zeroable)]
-pub struct UniformData { pub mvp_matrix: [[f32; 4]; 4] }
+pub struct UniformData { 
+    pub mvp_matrix: [[f32; 4]; 4],
+    pub model_matrix: [[f32; 4]; 4], 
+    pub light_dir: [f32; 4],         
+    pub light_color: [f32; 4],       
+}

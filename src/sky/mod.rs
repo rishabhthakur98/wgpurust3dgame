@@ -15,7 +15,7 @@ pub fn create_vertices() -> Vec<Vertex> {
         let x = theta.cos() * current_radius;
         let z = theta.sin() * current_radius;
         
-        vertices.push(Vertex { position: [x, y * config::STAR_RADIUS, z], color: colors::WHITE });
+        vertices.push(Vertex { position: [x, y * config::STAR_RADIUS, z], color: colors::WHITE, normal: [0.0, 0.0, 0.0] });
     }
     vertices
 }

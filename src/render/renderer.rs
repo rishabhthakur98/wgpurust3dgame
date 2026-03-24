@@ -15,7 +15,6 @@ pub struct Renderer<'a> {
     star_pipeline: wgpu::RenderPipeline,
     depth_texture_view: wgpu::TextureView,
     
-    // Instead of just the grid, we combine all stationary world objects into one buffer
     static_world_vertex_buffer: wgpu::Buffer,
     static_world_vertex_count: u32,
     
@@ -60,7 +59,7 @@ impl<'a> Renderer<'a> {
 
         let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0, visibility: wgpu::ShaderStages::VERTEX, count: None,
+                binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, count: None,
                 ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
             }],
             label: None,
@@ -88,7 +87,6 @@ impl<'a> Renderer<'a> {
             multisample: wgpu::MultisampleState::default(), multiview: None,
         });
 
-        // Combine all static objects into one buffer draw call!
         let mut static_world_verts = crate::floor::create_vertices();
         static_world_verts.extend(crate::world::high_building::create_vertices());
         static_world_verts.extend(crate::world::pyramid::create_vertices());
@@ -129,14 +127,28 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    pub fn update_matrices(&self, player_pos: Vec3, camera_yaw: f32, camera_pitch: f32, camera_dist: f32) {
+    // Now accepts `player_yaw` separately from `camera_yaw`
+    pub fn update_matrices(&self, player_pos: Vec3, player_yaw: f32, camera_yaw: f32, camera_pitch: f32, camera_dist: f32) {
         let cam_offset = Vec3::new(camera_yaw.sin() * camera_pitch.cos() * camera_dist, camera_pitch.sin() * camera_dist, camera_yaw.cos() * camera_pitch.cos() * camera_dist);
         let view_proj = self.projection_matrix * Mat4::look_at_rh(player_pos + cam_offset, player_pos, Vec3::Y);
 
-        self.queue.write_buffer(&self.world_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { mvp_matrix: (view_proj * Mat4::IDENTITY).to_cols_array_2d() }]));
+        let light_dir = [0.8, 1.0, 0.5, 0.0]; 
+        let light_color = [1.0, 1.0, 1.0, 0.4]; 
+
+        let world_model = Mat4::IDENTITY;
+        self.queue.write_buffer(&self.world_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
+            mvp_matrix: (view_proj * world_model).to_cols_array_2d(),
+            model_matrix: world_model.to_cols_array_2d(),
+            light_dir, light_color
+        }]));
         
-        let cube_mvp = view_proj * Mat4::from_translation(player_pos + Vec3::new(0.0, 0.5, 0.0)) * Mat4::from_rotation_y(camera_yaw);
-        self.queue.write_buffer(&self.cube_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { mvp_matrix: cube_mvp.to_cols_array_2d() }]));
+        // Rotate the cube based on the PLAYER'S yaw, not the camera's
+        let cube_model = Mat4::from_translation(player_pos + Vec3::new(0.0, 0.5, 0.0)) * Mat4::from_rotation_y(player_yaw);
+        self.queue.write_buffer(&self.cube_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
+            mvp_matrix: (view_proj * cube_model).to_cols_array_2d(),
+            model_matrix: cube_model.to_cols_array_2d(),
+            light_dir, light_color
+        }]));
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -154,17 +166,14 @@ impl<'a> Renderer<'a> {
 
             pass.set_pipeline(&self.solid_pipeline);
             
-            // Draw all static world geometry together
             pass.set_bind_group(0, &self.world_bind_group, &[]);
             pass.set_vertex_buffer(0, self.static_world_vertex_buffer.slice(..));
             pass.draw(0..self.static_world_vertex_count, 0..1);
 
-            // Draw Dynamic Player
             pass.set_bind_group(0, &self.cube_bind_group, &[]);
             pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
             pass.draw(0..self.cube_vertex_count, 0..1);
 
-            // Draw Stars
             pass.set_pipeline(&self.star_pipeline);
             pass.set_bind_group(0, &self.world_bind_group, &[]); 
             pass.set_vertex_buffer(0, self.star_vertex_buffer.slice(..));

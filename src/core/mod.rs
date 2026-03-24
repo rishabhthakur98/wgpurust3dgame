@@ -75,15 +75,15 @@ impl<'a> ApplicationHandler for GameState<'a> {
                 let limit_z = (crate::floor::config::SURFACE_LENGTH / 2.0) - (crate::player::config::SIZE / 2.0);
                 let colliders = crate::world::get_colliders();
 
-                // 1. Move the Player
-                self.player.update(dt, self.input.dir, self.camera.yaw, limit_x, limit_z, &colliders);
+                // 1. Move the Player (pass is_free_look)
+                self.player.update(dt, self.input.dir, self.camera.yaw, self.input.is_free_look, limit_x, limit_z, &colliders);
                 
                 // 2. Adjust Camera Distance smoothly using dt
                 self.camera.update(dt, self.player.pos, &colliders);
                 
-                // 3. Render
+                // 3. Render (pass BOTH player yaw and camera yaw)
                 if let Some(renderer) = &mut self.renderer {
-                    renderer.update_matrices(self.player.pos, self.camera.yaw, self.camera.pitch, self.camera.distance);
+                    renderer.update_matrices(self.player.pos, self.player.yaw, self.camera.yaw, self.camera.pitch, self.camera.distance);
                     let _ = renderer.render();
                 }
                 self.window.as_ref().unwrap().request_redraw();
