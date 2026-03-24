@@ -46,9 +46,14 @@ impl Player {
         let player_max_x = x + hs;
         let player_min_z = z - hs;
         let player_max_z = z + hs;
+        
+        // Player's Y bounding box
+        let player_min_y = 0.0;
+        let player_max_y = config::SIZE;
 
         for c in colliders {
             if player_max_x > c.min_x && player_min_x < c.max_x &&
+               player_max_y > c.min_y && player_min_y < c.max_y &&
                player_max_z > c.min_z && player_min_z < c.max_z {
                 return true;
             }

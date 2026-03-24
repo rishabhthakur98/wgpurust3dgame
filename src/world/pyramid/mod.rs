@@ -12,6 +12,7 @@ pub fn get_aabb() -> AABB {
     let hs = BASE_SIZE / 2.0;
     AABB {
         min_x: POS_X - hs, max_x: POS_X + hs,
+        min_y: 0.0, max_y: HEIGHT,
         min_z: POS_Z - hs, max_z: POS_Z + hs,
     }
 }

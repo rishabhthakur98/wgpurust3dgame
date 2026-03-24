@@ -3,8 +3,8 @@ pub mod colors;
 use crate::render::Vertex;
 use crate::world::AABB;
 
-pub const POS_X: f32 = 700.0;
-pub const POS_Z: f32 = 800.0; // Y in 3D cartesian usually maps to Z on a flat ground
+pub const POS_X: f32 = 400.0; 
+pub const POS_Z: f32 = 800.0; 
 pub const BREADTH: f32 = 10.0;
 pub const LENGTH: f32 = 20.0;
 pub const HEIGHT: f32 = 100.0;
@@ -12,6 +12,7 @@ pub const HEIGHT: f32 = 100.0;
 pub fn get_aabb() -> AABB {
     AABB {
         min_x: POS_X - BREADTH / 2.0, max_x: POS_X + BREADTH / 2.0,
+        min_y: 0.0, max_y: HEIGHT,
         min_z: POS_Z - LENGTH / 2.0, max_z: POS_Z + LENGTH / 2.0,
     }
 }
