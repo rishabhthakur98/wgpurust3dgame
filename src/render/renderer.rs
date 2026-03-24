@@ -3,7 +3,8 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 use glam::{Mat4, Vec3};
 
-use crate::render::vertex::{Vertex, UniformData};
+use crate::render::vertex::{Vertex, UniformData, PointLight};
+use crate::render::texture::Texture;
 
 pub struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
@@ -15,21 +16,17 @@ pub struct Renderer<'a> {
     star_pipeline: wgpu::RenderPipeline,
     depth_texture_view: wgpu::TextureView,
     
-    static_world_vertex_buffer: wgpu::Buffer,
-    static_world_vertex_count: u32,
+    // Split geometry into separate buffers for texturing
+    floor_buffer: wgpu::Buffer, floor_count: u32, floor_tex: Texture,
+    building_buffer: wgpu::Buffer, building_count: u32, building_tex: Texture,
+    pyramid_buffer: wgpu::Buffer, pyramid_count: u32, pyramid_tex: Texture,
+    street_light_buffer: wgpu::Buffer, street_light_count: u32, street_light_tex: Texture, // New Street Light Buffers
+    cube_buffer: wgpu::Buffer, cube_count: u32, 
+    player_side_tex: Texture, player_top_tex: Texture,
+    star_buffer: wgpu::Buffer, star_count: u32, star_tex: Texture, 
     
-    cube_vertex_buffer: wgpu::Buffer,
-    cube_vertex_count: u32,
-    
-    star_vertex_buffer: wgpu::Buffer,
-    star_vertex_count: u32,
-    
-    world_uniform_buffer: wgpu::Buffer,
-    world_bind_group: wgpu::BindGroup,
-    
-    cube_uniform_buffer: wgpu::Buffer,
-    cube_bind_group: wgpu::BindGroup,
-    
+    world_uniform_buffer: wgpu::Buffer, world_bind_group: wgpu::BindGroup,
+    cube_uniform_buffer: wgpu::Buffer, cube_bind_group: wgpu::BindGroup,
     projection_matrix: Mat4,
 }
 
@@ -54,10 +51,9 @@ impl<'a> Renderer<'a> {
         surface.configure(&device, &config);
 
         let depth_texture_view = create_depth_texture(&device, &config);
-        
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
-        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, count: None,
                 ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
@@ -65,8 +61,25 @@ impl<'a> Renderer<'a> {
             label: None,
         });
 
+        let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { multisampled: false, view_dimension: wgpu::TextureViewDimension::D2, sample_type: wgpu::TextureSampleType::Float { filterable: true } }, count: None },
+                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+            ],
+            label: Some("texture_bind_group_layout"),
+        });
+
+        // Load Textures
+        let floor_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/floor.png"), "floor", &texture_layout).unwrap();
+        let building_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/building.png"), "building", &texture_layout).unwrap();
+        let pyramid_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/pyramid.png"), "pyramid", &texture_layout).unwrap();
+        let street_light_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/street_light.png"), "street_light", &texture_layout).unwrap(); // Load new metal texture
+        let player_side_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/player_side.png"), "player_side", &texture_layout).unwrap();
+        let player_top_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/player_top.png"), "player_top", &texture_layout).unwrap();
+        let star_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/star.png"), "star", &texture_layout).unwrap();
+
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None, bind_group_layouts: &[&uniform_bind_group_layout], push_constant_ranges: &[],
+            label: None, bind_group_layouts: &[&uniform_layout, &texture_layout], push_constant_ranges: &[],
         });
 
         let solid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -87,32 +100,40 @@ impl<'a> Renderer<'a> {
             multisample: wgpu::MultisampleState::default(), multiview: None,
         });
 
-        let mut static_world_verts = crate::floor::create_vertices();
-        static_world_verts.extend(crate::world::high_building::create_vertices());
-        static_world_verts.extend(crate::world::pyramid::create_vertices());
-        
-        let cube_verts = crate::player::create_vertices();
-        let star_verts = crate::sky::create_vertices();
+        // Generate geometry vertices
+        let f_verts = crate::floor::create_vertices();
+        let b_verts = crate::world::high_building::create_vertices();
+        let p_verts = crate::world::pyramid::create_vertices();
+        let sl_verts = crate::world::street_light::create_vertices(); // Gen Street Lights
+        let c_verts = crate::player::create_vertices();
+        let s_verts = crate::sky::create_vertices();
 
-        let static_world_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&static_world_verts), usage: wgpu::BufferUsages::VERTEX });
-        let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&cube_verts), usage: wgpu::BufferUsages::VERTEX });
-        let star_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&star_verts), usage: wgpu::BufferUsages::VERTEX });
+        // Load geometry into GPU buffers
+        let floor_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&f_verts), usage: wgpu::BufferUsages::VERTEX });
+        let building_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&b_verts), usage: wgpu::BufferUsages::VERTEX });
+        let pyramid_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&p_verts), usage: wgpu::BufferUsages::VERTEX });
+        let street_light_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&sl_verts), usage: wgpu::BufferUsages::VERTEX }); // Gen Street Light Buffer
+        let cube_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&c_verts), usage: wgpu::BufferUsages::VERTEX });
+        let star_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: None, contents: bytemuck::cast_slice(&s_verts), usage: wgpu::BufferUsages::VERTEX });
 
         let matrix_size = std::mem::size_of::<UniformData>() as u64;
         let world_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: matrix_size, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        let world_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { layout: &uniform_bind_group_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: world_uniform_buffer.as_entire_binding() }], label: None });
+        let world_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { layout: &uniform_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: world_uniform_buffer.as_entire_binding() }], label: None });
 
         let cube_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor { label: None, size: matrix_size, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        let cube_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { layout: &uniform_bind_group_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: cube_uniform_buffer.as_entire_binding() }], label: None });
+        let cube_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor { layout: &uniform_layout, entries: &[wgpu::BindGroupEntry { binding: 0, resource: cube_uniform_buffer.as_entire_binding() }], label: None });
 
         let aspect = size.width as f32 / size.height as f32;
         let projection_matrix = Mat4::perspective_rh(45.0_f32.to_radians(), aspect, 0.1, 2000.0); 
 
         Self {
             surface, device, queue, config, size, solid_pipeline, star_pipeline, depth_texture_view,
-            static_world_vertex_buffer, static_world_vertex_count: static_world_verts.len() as u32,
-            cube_vertex_buffer, cube_vertex_count: cube_verts.len() as u32,
-            star_vertex_buffer, star_vertex_count: star_verts.len() as u32,
+            floor_buffer, floor_count: f_verts.len() as u32, floor_tex,
+            building_buffer, building_count: b_verts.len() as u32, building_tex,
+            pyramid_buffer, pyramid_count: p_verts.len() as u32, pyramid_tex,
+            street_light_buffer, street_light_count: sl_verts.len() as u32, street_light_tex, // Track street lights
+            cube_buffer, cube_count: c_verts.len() as u32, player_side_tex, player_top_tex,
+            star_buffer, star_count: s_verts.len() as u32, star_tex,
             world_uniform_buffer, world_bind_group, cube_uniform_buffer, cube_bind_group, projection_matrix,
         }
     }
@@ -127,57 +148,98 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    // Now accepts `player_yaw` separately from `camera_yaw`
-    pub fn update_matrices(&self, player_pos: Vec3, player_yaw: f32, camera_yaw: f32, camera_pitch: f32, camera_dist: f32) {
+    pub fn update_matrices(&self, player_pos: Vec3, player_yaw: f32, camera_yaw: f32, camera_pitch: f32, camera_dist: f32, is_day: bool) {
         let cam_offset = Vec3::new(camera_yaw.sin() * camera_pitch.cos() * camera_dist, camera_pitch.sin() * camera_dist, camera_yaw.cos() * camera_pitch.cos() * camera_dist);
         let view_proj = self.projection_matrix * Mat4::look_at_rh(player_pos + cam_offset, player_pos, Vec3::Y);
 
-        let light_dir = [0.8, 1.0, 0.5, 0.0]; 
-        let light_color = [1.0, 1.0, 1.0, 0.4]; 
+        // Day/Night Toggle Settings
+        let sun_dir = [0.8, 1.0, 0.5, 0.0]; 
+        let sun_color = if is_day { [1.0, 1.0, 0.9, 1.0] } else { [0.0, 0.0, 0.0, 0.0] }; // Intensity is in .w
+        let ambient_color = if is_day { [0.3, 0.3, 0.4, 1.0] } else { [0.05, 0.05, 0.1, 1.0] }; 
+
+        // Localized point lighting sources
+        let point_lights = [
+            PointLight { position: [348.5, 9.8, 550.0, 0.0], color: [1.0, 0.8, 0.4, 50.0] }, // Left Lamp
+            PointLight { position: [351.5, 9.8, 550.0, 0.0], color: [1.0, 0.8, 0.4, 50.0] }, // Right Lamp
+        ];
 
         let world_model = Mat4::IDENTITY;
         self.queue.write_buffer(&self.world_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
-            mvp_matrix: (view_proj * world_model).to_cols_array_2d(),
-            model_matrix: world_model.to_cols_array_2d(),
-            light_dir, light_color
+            mvp_matrix: (view_proj * world_model).to_cols_array_2d(), model_matrix: world_model.to_cols_array_2d(), sun_dir, sun_color, ambient_color, point_lights
         }]));
         
-        // Rotate the cube based on the PLAYER'S yaw, not the camera's
         let cube_model = Mat4::from_translation(player_pos + Vec3::new(0.0, 0.5, 0.0)) * Mat4::from_rotation_y(player_yaw);
         self.queue.write_buffer(&self.cube_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
-            mvp_matrix: (view_proj * cube_model).to_cols_array_2d(),
-            model_matrix: cube_model.to_cols_array_2d(),
-            light_dir, light_color
+            mvp_matrix: (view_proj * cube_model).to_cols_array_2d(), model_matrix: cube_model.to_cols_array_2d(), sun_dir, sun_color, ambient_color, point_lights
         }]));
     }
 
-    pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, is_day: bool) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
+        // Change Sky Color dynamically!
+        let clear_color = if is_day {
+            wgpu::Color { r: 0.4, g: 0.7, b: 1.0, a: 1.0 } // Sky Blue
+        } else {
+            crate::sky::colors::SKY_BLACK // Night Black
+        };
+
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(crate::sky::colors::SKY_BLACK), store: wgpu::StoreOp::Store } })],
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store } })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth_texture_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
                 timestamp_writes: None, occlusion_query_set: None,
             });
 
             pass.set_pipeline(&self.solid_pipeline);
-            
             pass.set_bind_group(0, &self.world_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.static_world_vertex_buffer.slice(..));
-            pass.draw(0..self.static_world_vertex_count, 0..1);
+            
+            // Draw Floor
+            pass.set_bind_group(1, &self.floor_tex.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.floor_buffer.slice(..));
+            pass.draw(0..self.floor_count, 0..1);
 
+            // Draw Building
+            pass.set_bind_group(1, &self.building_tex.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.building_buffer.slice(..));
+            pass.draw(0..self.building_count, 0..1);
+
+            // Draw Pyramid
+            pass.set_bind_group(1, &self.pyramid_tex.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.pyramid_buffer.slice(..));
+            pass.draw(0..self.pyramid_count, 0..1);
+
+            // Draw Street Lights
+            pass.set_bind_group(1, &self.street_light_tex.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.street_light_buffer.slice(..));
+            pass.draw(0..self.street_light_count, 0..1);
+
+            // Draw Player
             pass.set_bind_group(0, &self.cube_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..));
-            pass.draw(0..self.cube_vertex_count, 0..1);
+            pass.set_vertex_buffer(0, self.cube_buffer.slice(..));
+            pass.set_bind_group(1, &self.player_top_tex.bind_group, &[]);
+            pass.draw(0..6, 0..1); // Top Face
+            pass.set_bind_group(1, &self.player_side_tex.bind_group, &[]);
+            pass.draw(6..30, 0..1); // Sides
+            pass.set_bind_group(1, &self.player_top_tex.bind_group, &[]);
+            pass.draw(30..36, 0..1); // Bottom face
 
+            // Draw Stars and Sun
             pass.set_pipeline(&self.star_pipeline);
             pass.set_bind_group(0, &self.world_bind_group, &[]); 
-            pass.set_vertex_buffer(0, self.star_vertex_buffer.slice(..));
-            pass.draw(0..self.star_vertex_count, 0..1);
+            pass.set_bind_group(1, &self.star_tex.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.star_buffer.slice(..));
+            
+            if is_day {
+                // Draw just the Sun block (last 36 vertices in sky array)
+                pass.draw((self.star_count - 36)..self.star_count, 0..1);
+            } else {
+                // Draw just the Stars
+                pass.draw(0..(self.star_count - 36), 0..1);
+            }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

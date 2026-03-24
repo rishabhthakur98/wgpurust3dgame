@@ -3,11 +3,12 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 
 pub struct InputState {
     pub dir: Vec2,
-    pub is_free_look: bool, // Track if Right Ctrl is held
+    pub is_free_look: bool, 
+    pub is_day: bool, // NEW: Toggle day/night
 }
 
 impl InputState {
-    pub fn new() -> Self { Self { dir: Vec2::ZERO, is_free_look: false } }
+    pub fn new() -> Self { Self { dir: Vec2::ZERO, is_free_look: false, is_day: true } }
 
     pub fn process_keyboard(&mut self, key: PhysicalKey, is_pressed: bool) {
         let val = if is_pressed { 1.0 } else { 0.0 };
@@ -16,7 +17,10 @@ impl InputState {
             PhysicalKey::Code(KeyCode::KeyS) => self.dir.y = -val,
             PhysicalKey::Code(KeyCode::KeyA) => self.dir.x = -val,
             PhysicalKey::Code(KeyCode::KeyD) => self.dir.x = val,
-            PhysicalKey::Code(KeyCode::ControlLeft) => self.is_free_look = is_pressed,
+            PhysicalKey::Code(KeyCode::ControlLeft) => self.is_free_look = is_pressed, // CHANGED TO LEFT CTRL
+            PhysicalKey::Code(KeyCode::KeyT) => {
+                if is_pressed { self.is_day = !self.is_day; } // Toggle time
+            }
             _ => {}
         }
     }

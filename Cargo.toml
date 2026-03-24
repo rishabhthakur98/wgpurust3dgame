@@ -22,3 +22,6 @@ bytemuck = { version = "1.16", features = ["derive"] }
 # 6. Logging (Crucial for seeing wgpu's validation errors)
 log = "0.4"
 env_logger = "0.11"
+
+image = "0.25"  # NEW: For loading textures
+anyhow = "1.0"  # NEW: For easy error handling
