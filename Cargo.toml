@@ -1,0 +1,24 @@
+[package]
+name = "wgpurust3dgame"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# 1. Windowing & OS Events
+winit = "0.30"
+
+# 2. Graphics Rendering API
+wgpu = "0.20"
+
+# 3. 3D Math (Fast Vectors, Matrices, Quaternions)
+glam = "0.30"
+
+# 4. Minimal Async Executor (Required for wgpu setup)
+pollster = "0.3"
+
+# 5. Memory Casting (Safely sending vertex data to the GPU)
+bytemuck = { version = "1.16", features = ["derive"] }
+
+# 6. Logging (Crucial for seeing wgpu's validation errors)
+log = "0.4"
+env_logger = "0.11"

@@ -1,0 +1,1 @@
+pub const SURFACE_SIZE: f32 = 1000.0;
