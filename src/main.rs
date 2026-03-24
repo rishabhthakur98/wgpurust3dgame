@@ -1,4 +1,3 @@
-// src/main.rs
 mod camera;
 mod control;
 mod core;
@@ -6,6 +5,7 @@ mod floor;
 mod player;
 mod render;
 mod sky;
+mod world;
 
 use core::GameState;
 use winit::event_loop::{ControlFlow, EventLoop};

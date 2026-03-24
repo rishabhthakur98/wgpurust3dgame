@@ -1,5 +1,6 @@
 pub mod config;
-use crate::core::colors::WHITE;
+pub mod colors;
+
 use crate::render::Vertex;
 
 pub fn create_vertices() -> Vec<Vertex> {
@@ -14,7 +15,7 @@ pub fn create_vertices() -> Vec<Vertex> {
         let x = theta.cos() * current_radius;
         let z = theta.sin() * current_radius;
         
-        vertices.push(Vertex { position: [x, y * config::STAR_RADIUS, z], color: WHITE });
+        vertices.push(Vertex { position: [x, y * config::STAR_RADIUS, z], color: colors::WHITE });
     }
     vertices
 }

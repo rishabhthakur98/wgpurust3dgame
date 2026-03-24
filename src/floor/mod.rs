@@ -1,11 +1,17 @@
 pub mod config;
-use crate::core::colors::LIGHT_GREY;
+pub mod colors;
+
 use crate::render::Vertex;
 
 pub fn create_vertices() -> Vec<Vertex> {
-    let s = config::SURFACE_SIZE / 2.0; 
+    let hw = config::SURFACE_WIDTH / 2.0;
+    let hl = config::SURFACE_LENGTH / 2.0;
     vec![
-        Vertex { position: [-s, 0.0, -s], color: LIGHT_GREY }, Vertex { position: [-s, 0.0,  s], color: LIGHT_GREY }, Vertex { position: [ s, 0.0, -s], color: LIGHT_GREY },
-        Vertex { position: [-s, 0.0,  s], color: LIGHT_GREY }, Vertex { position: [ s, 0.0,  s], color: LIGHT_GREY }, Vertex { position: [ s, 0.0, -s], color: LIGHT_GREY },
+        Vertex { position: [-hw, 0.0, -hl], color: colors::LIGHT_GREY },
+        Vertex { position: [-hw, 0.0,  hl], color: colors::LIGHT_GREY },
+        Vertex { position: [ hw, 0.0, -hl], color: colors::LIGHT_GREY },
+        Vertex { position: [-hw, 0.0,  hl], color: colors::LIGHT_GREY },
+        Vertex { position: [ hw, 0.0,  hl], color: colors::LIGHT_GREY },
+        Vertex { position: [ hw, 0.0, -hl], color: colors::LIGHT_GREY },
     ]
 }

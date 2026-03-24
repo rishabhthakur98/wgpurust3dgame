@@ -1,4 +1,3 @@
-pub mod colors;
 pub mod config;
 
 use std::sync::Arc;
@@ -72,9 +71,11 @@ impl<'a> ApplicationHandler for GameState<'a> {
                 }
                 self.last_frame_time = Instant::now();
                 
-                // Orchestrate the update
-                let limit = (crate::floor::config::SURFACE_SIZE / 2.0) - (crate::player::config::SIZE / 2.0);
-                self.player.update(dt, self.input.dir, self.camera.yaw, limit);
+                let limit_x = (crate::floor::config::SURFACE_WIDTH / 2.0) - (crate::player::config::SIZE / 2.0);
+                let limit_z = (crate::floor::config::SURFACE_LENGTH / 2.0) - (crate::player::config::SIZE / 2.0);
+                let colliders = crate::world::get_colliders();
+
+                self.player.update(dt, self.input.dir, self.camera.yaw, limit_x, limit_z, &colliders);
                 
                 if let Some(renderer) = &mut self.renderer {
                     renderer.update_matrices(self.player.pos, self.camera.yaw, self.camera.pitch, self.camera.distance);

@@ -1,0 +1,1 @@
+pub const LIGHT_GREY: [f32; 3] = [0.7, 0.7, 0.7];
