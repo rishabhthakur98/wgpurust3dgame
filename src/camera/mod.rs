@@ -19,7 +19,6 @@ impl Camera {
         self.pitch = self.pitch.clamp(config::PITCH_MIN, config::PITCH_MAX);
     }
 
-    // Helper to calculate camera offset position based on a distance
     pub fn get_offset(&self, distance: f32) -> Vec3 {
         Vec3::new(
             self.yaw.sin() * self.pitch.cos() * distance,
@@ -28,25 +27,22 @@ impl Camera {
         )
     }
 
-    // Calculate dynamic distance to prevent clipping into objects or the floor
-    pub fn update(&mut self, player_pos: Vec3, colliders: &[AABB]) {
+    // Notice we added `dt` here to do smooth time-based math
+    pub fn update(&mut self, dt: f32, player_pos: Vec3, colliders: &[AABB]) {
         let steps = 20;
         let step_size = (config::DEFAULT_DISTANCE - config::MIN_DISTANCE) / steps as f32;
         
-        let mut best_dist = config::MIN_DISTANCE;
+        let mut target_dist = config::MIN_DISTANCE;
 
-        // March outward from MIN to DEFAULT. Stop at the first collision.
         for i in 0..=steps {
             let test_dist = config::MIN_DISTANCE + step_size * (i as f32);
             let cam_pos = player_pos + self.get_offset(test_dist);
 
-            // Floor check (0.5 padding so the camera doesn't visually cut into the ground)
             let mut colliding = cam_pos.y < 0.5;
 
-            // Object check
             if !colliding {
                 for c in colliders {
-                    let r = 0.5; // padding/radius around the camera
+                    let r = 0.5; 
                     if cam_pos.x + r > c.min_x && cam_pos.x - r < c.max_x &&
                        cam_pos.y + r > c.min_y && cam_pos.y - r < c.max_y &&
                        cam_pos.z + r > c.min_z && cam_pos.z - r < c.max_z {
@@ -57,12 +53,19 @@ impl Camera {
             }
 
             if colliding {
-                break; // Hit something! Stop expanding distance.
+                break; 
             } else {
-                best_dist = test_dist; // Safe distance, keep it and try expanding more.
+                target_dist = test_dist; 
             }
         }
 
-        self.distance = best_dist;
+        // Smoothly interpolate current distance to the target distance
+        let speed = if target_dist < self.distance {
+            config::ZOOM_IN_SPEED
+        } else {
+            config::ZOOM_OUT_SPEED
+        };
+        
+        self.distance += (target_dist - self.distance) * speed * dt;
     }
 }

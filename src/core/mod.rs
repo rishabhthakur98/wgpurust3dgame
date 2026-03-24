@@ -78,8 +78,8 @@ impl<'a> ApplicationHandler for GameState<'a> {
                 // 1. Move the Player
                 self.player.update(dt, self.input.dir, self.camera.yaw, limit_x, limit_z, &colliders);
                 
-                // 2. Adjust Camera Distance based on collisions
-                self.camera.update(self.player.pos, &colliders);
+                // 2. Adjust Camera Distance smoothly using dt
+                self.camera.update(dt, self.player.pos, &colliders);
                 
                 // 3. Render
                 if let Some(renderer) = &mut self.renderer {
