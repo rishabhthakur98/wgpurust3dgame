@@ -6,6 +6,7 @@ struct PointLight {
 struct UniformData {
     mvp_matrix: mat4x4<f32>,
     model_matrix: mat4x4<f32>,
+    light_mvp_matrix: mat4x4<f32>,
     sun_dir: vec4<f32>,
     sun_color: vec4<f32>,
     ambient_color: vec4<f32>,
@@ -13,11 +14,19 @@ struct UniformData {
 };
 @group(0) @binding(0) var<uniform> ubo: UniformData;
 
+// Standard Textures
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
 
+// NEW: Shadow Map Textures
+@group(2) @binding(0) var t_shadow: texture_depth_2d;
+@group(2) @binding(1) var s_shadow: sampler_comparison;
+
 struct VertexInput {
-    @location(0) position: vec3<f32>, @location(1) color: vec3<f32>, @location(2) normal: vec3<f32>, @location(3) tex_coords: vec2<f32>,
+    @location(0) position: vec3<f32>,
+    @location(1) color: vec3<f32>,
+    @location(2) normal: vec3<f32>,
+    @location(3) tex_coords: vec2<f32>,
 };
 
 struct VertexOutput {
@@ -25,14 +34,19 @@ struct VertexOutput {
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>, 
     @location(2) tex_coords: vec2<f32>,
-    @location(3) world_pos: vec3<f32>, // NEW: Exact position in the 3D world
+    @location(3) world_pos: vec3<f32>, 
+    @location(4) light_space_pos: vec4<f32>, // Pixel position relative to the sun
 };
 
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = ubo.mvp_matrix * vec4<f32>(model.position, 1.0);
-    out.world_pos = (ubo.model_matrix * vec4<f32>(model.position, 1.0)).xyz; // Calculate World Pos
+    out.world_pos = (ubo.model_matrix * vec4<f32>(model.position, 1.0)).xyz; 
+    
+    // Calculate where this vertex is on the Shadow Map
+    out.light_space_pos = ubo.light_mvp_matrix * ubo.model_matrix * vec4<f32>(model.position, 1.0); 
+    
     out.color = model.color;
     out.normal = (ubo.model_matrix * vec4<f32>(model.normal, 0.0)).xyz;
     out.tex_coords = model.tex_coords;
@@ -42,27 +56,41 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (length(in.normal) < 0.1) {
-        return vec4<f32>(in.color, 1.0); // Emissive objects
+        return vec4<f32>(in.color, 1.0); 
     }
 
     let object_color = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     let normal = normalize(in.normal);
     
-    // 1. Calculate Sun Light
+    // --- SHADOW CALCULATION ---
+    var shadow = 0.0;
+    
+    // Convert clip space to texture coordinates
+    let proj_coords = in.light_space_pos.xyz / in.light_space_pos.w;
+    let flip_y = vec2<f32>(proj_coords.x * 0.5 + 0.5, 1.0 - (proj_coords.y * 0.5 + 0.5));
+    
+    // Check if pixel is inside the sun's camera view bounds
+    if (flip_y.x >= 0.0 && flip_y.x <= 1.0 && flip_y.y >= 0.0 && flip_y.y <= 1.0 && proj_coords.z <= 1.0) {
+        // Sample shadow map. Subtract 0.005 to prevent "shadow acne"
+        shadow = textureSampleCompareLevel(t_shadow, s_shadow, flip_y, proj_coords.z - 0.005);
+    } else {
+        shadow = 1.0; // Outside the map is fully lit
+    }
+
+    // --- SUN LIGHTING ---
     let sun_dir = normalize(ubo.sun_dir.xyz);
     let sun_diffuse = max(dot(normal, sun_dir), 0.0) * ubo.sun_color.w;
-    var lighting = ubo.ambient_color.xyz + (ubo.sun_color.xyz * sun_diffuse);
+    
+    // Multiply sun strength by our shadow value
+    var lighting = ubo.ambient_color.xyz + (ubo.sun_color.xyz * sun_diffuse * shadow);
 
-    // 2. Calculate Point Lights (Street Lamps)
+    // --- POINT LIGHTING ---
     for (var i = 0u; i < 2u; i = i + 1u) {
         let pl = ubo.point_lights[i];
         let light_vec = pl.position.xyz - in.world_pos;
         let distance = length(light_vec);
         let dir = light_vec / distance;
-        
-        // Physics attenuation math: 1 / (1 + linear*d + quadratic*d^2)
         let attenuation = 1.0 / (1.0 + 0.045 * distance + 0.0075 * (distance * distance));
-        
         let diffuse = max(dot(normal, dir), 0.0);
         lighting += pl.color.xyz * (diffuse * pl.color.w * attenuation);
     }

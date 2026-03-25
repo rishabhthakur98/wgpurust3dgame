@@ -3,7 +3,10 @@ use bytemuck::{Pod, Zeroable};
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
-    pub position: [f32; 3], pub color: [f32; 3], pub normal: [f32; 3], pub tex_coords: [f32; 2],
+    pub position: [f32; 3],
+    pub color: [f32; 3], 
+    pub normal: [f32; 3], 
+    pub tex_coords: [f32; 2],
 }
 
 impl Vertex {
@@ -21,12 +24,11 @@ impl Vertex {
     }
 }
 
-// Struct to hold street light data
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod, Zeroable)]
 pub struct PointLight {
-    pub position: [f32; 4], // x, y, z, padding
-    pub color: [f32; 4],    // r, g, b, intensity
+    pub position: [f32; 4],
+    pub color: [f32; 4],   
 }
 
 #[repr(C)]
@@ -34,8 +36,9 @@ pub struct PointLight {
 pub struct UniformData { 
     pub mvp_matrix: [[f32; 4]; 4],
     pub model_matrix: [[f32; 4]; 4], 
+    pub light_mvp_matrix: [[f32; 4]; 4], // NEW: The Sun's perspective matrix
     pub sun_dir: [f32; 4],         
-    pub sun_color: [f32; 4], // Intensity in .w
+    pub sun_color: [f32; 4], 
     pub ambient_color: [f32; 4],
-    pub point_lights: [PointLight; 2], // Pass our 2 street lamps
+    pub point_lights: [PointLight; 2], 
 }
