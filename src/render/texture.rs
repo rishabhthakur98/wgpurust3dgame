@@ -55,7 +55,7 @@ impl Texture {
     }
 
     pub fn create_shadow_map(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
-        let size = wgpu::Extent3d { width: 2048, height: 2048, depth_or_array_layers: 1 }; // High-res shadow map
+        let size = wgpu::Extent3d { width: 2048, height: 2048, depth_or_array_layers: 1 };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("shadow_map"), size, mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
@@ -70,7 +70,7 @@ impl Texture {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual), // This is a "comparison sampler" for shadows
+            compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
         });
 

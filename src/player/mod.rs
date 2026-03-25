@@ -7,7 +7,7 @@ use crate::world::AABB;
 
 pub struct Player {
     pub pos: Vec3,
-    pub yaw: f32, // Give the player its own rotation
+    pub yaw: f32,
 }
 
 impl Player {
@@ -16,12 +16,10 @@ impl Player {
     }
 
     pub fn update(&mut self, dt: f32, input: Vec2, camera_yaw: f32, is_free_look: bool, limit_x: f32, limit_z: f32, colliders: &[AABB]) {
-        // If holding Left Ctrl, do not move and do not rotate the player's body
         if is_free_look {
             return; 
         }
 
-        // Snap player rotation to camera rotation when not in free-look
         self.yaw = camera_yaw;
 
         let forward = Vec3::new(-camera_yaw.sin(), 0.0, -camera_yaw.cos()).normalize();
@@ -74,14 +72,13 @@ pub fn create_vertices() -> Vec<Vertex> {
     let front = [0.0, 0.0, 1.0]; let back = [0.0, 0.0, -1.0];
     let right = [1.0, 0.0, 0.0]; let left = [-1.0, 0.0, 0.0];
 
-    // UVs for a perfect square texture mapped to each face
     let uv_tl = [0.0, 0.0]; let uv_tr = [1.0, 0.0]; let uv_bl = [0.0, 1.0]; let uv_br = [1.0, 1.0];
 
     vec![
-        // Top Face (drawn with player_top_tex)
+        // Top Face
         Vertex { position: [-s, s, -s], color: RED, normal: up, tex_coords: uv_tl }, Vertex { position: [-s, s, s], color: RED, normal: up, tex_coords: uv_bl }, Vertex { position: [s, s, -s], color: RED, normal: up, tex_coords: uv_tr },
         Vertex { position: [-s, s, s], color: RED, normal: up, tex_coords: uv_bl }, Vertex { position: [s, s, s], color: RED, normal: up, tex_coords: uv_br }, Vertex { position: [s, s, -s], color: RED, normal: up, tex_coords: uv_tr },
-        // Front Face (drawn with player_side_tex)
+        // Front Face
         Vertex { position: [-s, -s, s], color: LIGHT_GREEN, normal: front, tex_coords: uv_bl }, Vertex { position: [s, -s, s], color: LIGHT_GREEN, normal: front, tex_coords: uv_br }, Vertex { position: [-s, s, s], color: LIGHT_GREEN, normal: front, tex_coords: uv_tl },
         Vertex { position: [s, -s, s], color: LIGHT_GREEN, normal: front, tex_coords: uv_br }, Vertex { position: [s, s, s], color: LIGHT_GREEN, normal: front, tex_coords: uv_tr }, Vertex { position: [-s, s, s], color: LIGHT_GREEN, normal: front, tex_coords: uv_tl },
         // Right Face 

@@ -36,7 +36,7 @@ pub struct PointLight {
 pub struct UniformData { 
     pub mvp_matrix: [[f32; 4]; 4],
     pub model_matrix: [[f32; 4]; 4], 
-    pub light_mvp_matrix: [[f32; 4]; 4], // NEW: The Sun's perspective matrix
+    pub light_mvp_matrix: [[f32; 4]; 4],
     pub sun_dir: [f32; 4],         
     pub sun_color: [f32; 4], 
     pub ambient_color: [f32; 4],

@@ -18,7 +18,7 @@ struct UniformData {
 @group(1) @binding(0) var t_diffuse: texture_2d<f32>;
 @group(1) @binding(1) var s_diffuse: sampler;
 
-// NEW: Shadow Map Textures
+// Shadow Map Textures
 @group(2) @binding(0) var t_shadow: texture_depth_2d;
 @group(2) @binding(1) var s_shadow: sampler_comparison;
 
@@ -35,7 +35,7 @@ struct VertexOutput {
     @location(1) normal: vec3<f32>, 
     @location(2) tex_coords: vec2<f32>,
     @location(3) world_pos: vec3<f32>, 
-    @location(4) light_space_pos: vec4<f32>, // Pixel position relative to the sun
+    @location(4) light_space_pos: vec4<f32>, 
 };
 
 @vertex
@@ -44,7 +44,6 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     out.clip_position = ubo.mvp_matrix * vec4<f32>(model.position, 1.0);
     out.world_pos = (ubo.model_matrix * vec4<f32>(model.position, 1.0)).xyz; 
     
-    // Calculate where this vertex is on the Shadow Map
     out.light_space_pos = ubo.light_mvp_matrix * ubo.model_matrix * vec4<f32>(model.position, 1.0); 
     
     out.color = model.color;
@@ -65,23 +64,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // --- SHADOW CALCULATION ---
     var shadow = 0.0;
     
-    // Convert clip space to texture coordinates
     let proj_coords = in.light_space_pos.xyz / in.light_space_pos.w;
     let flip_y = vec2<f32>(proj_coords.x * 0.5 + 0.5, 1.0 - (proj_coords.y * 0.5 + 0.5));
     
-    // Check if pixel is inside the sun's camera view bounds
     if (flip_y.x >= 0.0 && flip_y.x <= 1.0 && flip_y.y >= 0.0 && flip_y.y <= 1.0 && proj_coords.z <= 1.0) {
-        // Sample shadow map. Subtract 0.005 to prevent "shadow acne"
         shadow = textureSampleCompareLevel(t_shadow, s_shadow, flip_y, proj_coords.z - 0.005);
     } else {
-        shadow = 1.0; // Outside the map is fully lit
+        shadow = 1.0; 
     }
 
     // --- SUN LIGHTING ---
     let sun_dir = normalize(ubo.sun_dir.xyz);
     let sun_diffuse = max(dot(normal, sun_dir), 0.0) * ubo.sun_color.w;
     
-    // Multiply sun strength by our shadow value
     var lighting = ubo.ambient_color.xyz + (ubo.sun_color.xyz * sun_diffuse * shadow);
 
     // --- POINT LIGHTING ---

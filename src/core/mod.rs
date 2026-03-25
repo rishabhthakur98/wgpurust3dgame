@@ -11,6 +11,7 @@ use crate::camera::Camera;
 use crate::control::InputState;
 use crate::player::Player;
 use crate::render::Renderer;
+use crate::world::WorldState; // NEW: Import WorldState
 
 pub struct GameState<'a> {
     window: Option<Arc<Window>>,
@@ -71,9 +72,13 @@ impl<'a> ApplicationHandler for GameState<'a> {
                 }
                 self.last_frame_time = Instant::now();
                 
-                let limit_x = (crate::floor::config::SURFACE_WIDTH / 2.0) - (crate::player::config::SIZE / 2.0);
-                let limit_z = (crate::floor::config::SURFACE_LENGTH / 2.0) - (crate::player::config::SIZE / 2.0);
-                let colliders = crate::world::get_colliders();
+                // Get world constraints via the new WorldState system
+                let world_state = WorldState::new();
+                let colliders = world_state.get_colliders();
+                
+                // Keep player within a 1000x1000 radius of origin
+                let limit_x = 1000.0; 
+                let limit_z = 1000.0;
 
                 // 1. Move the Player
                 self.player.update(dt, self.input.dir, self.camera.yaw, self.input.is_free_look, limit_x, limit_z, &colliders);
@@ -83,7 +88,6 @@ impl<'a> ApplicationHandler for GameState<'a> {
                 
                 // 3. Render
                 if let Some(renderer) = &mut self.renderer {
-                    // Pass is_day boolean to trigger day/night cycle
                     renderer.update_matrices(self.player.pos, self.player.yaw, self.camera.yaw, self.camera.pitch, self.camera.distance, self.input.is_day);
                     let _ = renderer.render(self.input.is_day);
                 }

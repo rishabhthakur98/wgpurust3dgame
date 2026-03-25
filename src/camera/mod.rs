@@ -27,7 +27,6 @@ impl Camera {
         )
     }
 
-    // Notice we added `dt` here to do smooth time-based math
     pub fn update(&mut self, dt: f32, player_pos: Vec3, colliders: &[AABB]) {
         let steps = 20;
         let step_size = (config::DEFAULT_DISTANCE - config::MIN_DISTANCE) / steps as f32;
@@ -59,7 +58,6 @@ impl Camera {
             }
         }
 
-        // Smoothly interpolate current distance to the target distance
         let speed = if target_dist < self.distance {
             config::ZOOM_IN_SPEED
         } else {

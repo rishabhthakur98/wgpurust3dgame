@@ -1,7 +1,6 @@
 mod camera;
 mod control;
 mod core;
-mod floor;
 mod player;
 mod render;
 mod sky;

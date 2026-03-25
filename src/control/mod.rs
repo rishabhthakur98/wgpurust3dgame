@@ -4,7 +4,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 pub struct InputState {
     pub dir: Vec2,
     pub is_free_look: bool, 
-    pub is_day: bool, // NEW: Toggle day/night
+    pub is_day: bool,
 }
 
 impl InputState {
@@ -17,9 +17,9 @@ impl InputState {
             PhysicalKey::Code(KeyCode::KeyS) => self.dir.y = -val,
             PhysicalKey::Code(KeyCode::KeyA) => self.dir.x = -val,
             PhysicalKey::Code(KeyCode::KeyD) => self.dir.x = val,
-            PhysicalKey::Code(KeyCode::ControlLeft) => self.is_free_look = is_pressed, // CHANGED TO LEFT CTRL
+            PhysicalKey::Code(KeyCode::ControlLeft) => self.is_free_look = is_pressed, 
             PhysicalKey::Code(KeyCode::KeyT) => {
-                if is_pressed { self.is_day = !self.is_day; } // Toggle time
+                if is_pressed { self.is_day = !self.is_day; } 
             }
             _ => {}
         }

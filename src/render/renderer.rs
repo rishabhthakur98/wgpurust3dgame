@@ -7,18 +7,10 @@ use crate::render::vertex::{Vertex, UniformData, PointLight};
 use crate::render::texture::Texture;
 
 pub struct Renderer<'a> {
-    surface: wgpu::Surface<'a>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    surface: wgpu::Surface<'a>, device: wgpu::Device, queue: wgpu::Queue, config: wgpu::SurfaceConfiguration,
     pub size: winit::dpi::PhysicalSize<u32>,
-    
-    solid_pipeline: wgpu::RenderPipeline,
-    star_pipeline: wgpu::RenderPipeline,
-    shadow_pipeline: wgpu::RenderPipeline, // NEW
-    
-    depth_texture_view: wgpu::TextureView,
-    shadow_map: Texture, // NEW
+    solid_pipeline: wgpu::RenderPipeline, star_pipeline: wgpu::RenderPipeline, shadow_pipeline: wgpu::RenderPipeline,
+    depth_texture_view: wgpu::TextureView, shadow_map: Texture,
     
     floor_buffer: wgpu::Buffer, floor_count: u32, floor_tex: Texture,
     building_buffer: wgpu::Buffer, building_count: u32, building_tex: Texture,
@@ -30,9 +22,7 @@ pub struct Renderer<'a> {
     
     world_uniform_buffer: wgpu::Buffer, world_bind_group: wgpu::BindGroup,
     cube_uniform_buffer: wgpu::Buffer, cube_bind_group: wgpu::BindGroup,
-    
-    projection_matrix: Mat4,
-    light_projection_matrix: Mat4, // NEW
+    projection_matrix: Mat4, light_projection_matrix: Mat4,
 }
 
 impl<'a> Renderer<'a> {
@@ -40,10 +30,7 @@ impl<'a> Renderer<'a> {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::all(), ..Default::default() });
         let surface = instance.create_surface(window).unwrap();
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance, compatible_surface: Some(&surface), force_fallback_adapter: false,
-        })).unwrap();
-
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference: wgpu::PowerPreference::HighPerformance, compatible_surface: Some(&surface), force_fallback_adapter: false })).unwrap();
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None)).unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
@@ -56,81 +43,38 @@ impl<'a> Renderer<'a> {
         surface.configure(&device, &config);
 
         let depth_texture_view = create_depth_texture(&device, &config);
-        
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
         let shadow_shader = device.create_shader_module(wgpu::include_wgsl!("shadow.wgsl")); 
 
-        // 1. Layouts
-        let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None }], label: None,
-        });
+        let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }, count: None }], label: None });
+        let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { multisampled: false, view_dimension: wgpu::TextureViewDimension::D2, sample_type: wgpu::TextureSampleType::Float { filterable: true } }, count: None }, wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None }], label: None });
+        let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { multisampled: false, view_dimension: wgpu::TextureViewDimension::D2, sample_type: wgpu::TextureSampleType::Depth }, count: None }, wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None }], label: None });
 
-        let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { multisampled: false, view_dimension: wgpu::TextureViewDimension::D2, sample_type: wgpu::TextureSampleType::Float { filterable: true } }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
-            ], label: None,
-        });
-
-        let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { multisampled: false, view_dimension: wgpu::TextureViewDimension::D2, sample_type: wgpu::TextureSampleType::Depth }, count: None },
-                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None },
-            ], label: None,
-        });
-
-        // 2. Load Textures & Shadow Map
-        let floor_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/floor.png"), "floor", &texture_layout).unwrap();
-        let building_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/building.png"), "building", &texture_layout).unwrap();
-        let pyramid_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/pyramid.png"), "pyramid", &texture_layout).unwrap();
-        let street_light_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/street_light.png"), "street_light", &texture_layout).unwrap(); 
+        // Load Textures directly from Prefabs
+        let floor_tex = Texture::from_bytes(&device, &queue, crate::world::prefabs::static_objs::grounds::ground01::TEXTURE_BYTES, "floor", &texture_layout).unwrap();
+        let building_tex = Texture::from_bytes(&device, &queue, crate::world::prefabs::static_objs::buildings::building01::TEXTURE_BYTES, "building", &texture_layout).unwrap();
+        let pyramid_tex = Texture::from_bytes(&device, &queue, crate::world::prefabs::static_objs::buildings::building02::TEXTURE_BYTES, "pyramid", &texture_layout).unwrap();
+        let street_light_tex = Texture::from_bytes(&device, &queue, crate::world::prefabs::static_objs::streetlights::streetlight01::TEXTURE_BYTES, "street_light", &texture_layout).unwrap(); 
+        
         let player_side_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/player_side.png"), "player_side", &texture_layout).unwrap();
         let player_top_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/player_top.png"), "player_top", &texture_layout).unwrap();
         let star_tex = Texture::from_bytes(&device, &queue, include_bytes!("../../assets/star.png"), "star", &texture_layout).unwrap();
-        
         let shadow_map = Texture::create_shadow_map(&device, &shadow_layout);
 
-        // 3. Pipelines
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None, bind_group_layouts: &[&uniform_layout, &texture_layout, &shadow_layout], push_constant_ranges: &[],
-        });
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[&uniform_layout, &texture_layout, &shadow_layout], push_constant_ranges: &[] });
+        let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("Shadow Layout"), bind_group_layouts: &[&uniform_layout], push_constant_ranges: &[] });
 
-        let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Shadow Layout"), bind_group_layouts: &[&uniform_layout], push_constant_ranges: &[],
-        });
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor { label: Some("Shadow"), layout: Some(&shadow_pipeline_layout), vertex: wgpu::VertexState { module: &shadow_shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: None, primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true, depth_compare: wgpu::CompareFunction::LessEqual, stencil: Default::default(), bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 } }), multisample: wgpu::MultisampleState::default(), multiview: None });
+        let solid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor { label: Some("Solid"), layout: Some(&render_pipeline_layout), vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: Some(wgpu::FragmentState { module: &shader, entry_point: "fs_main", targets: &[Some(config.format.into())], compilation_options: Default::default() }), primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }), multisample: wgpu::MultisampleState::default(), multiview: None });
+        let star_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor { label: Some("Stars"), layout: Some(&render_pipeline_layout), vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: Some(wgpu::FragmentState { module: &shader, entry_point: "fs_main", targets: &[Some(config.format.into())], compilation_options: Default::default() }), primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::PointList, ..Default::default() }, depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: false, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }), multisample: wgpu::MultisampleState::default(), multiview: None });
 
-        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Shadow"), layout: Some(&shadow_pipeline_layout),
-            vertex: wgpu::VertexState { module: &shadow_shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() },
-            fragment: None,
-            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: Some(wgpu::Face::Back), ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true, depth_compare: wgpu::CompareFunction::LessEqual, stencil: Default::default(), bias: wgpu::DepthBiasState { constant: 2, slope_scale: 2.0, clamp: 0.0 } }),
-            multisample: wgpu::MultisampleState::default(), multiview: None,
-        });
+        // Instantiate World State
+        let world_state = crate::world::WorldState::new();
 
-        let solid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Solid"), layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() },
-            fragment: Some(wgpu::FragmentState { module: &shader, entry_point: "fs_main", targets: &[Some(config.format.into())], compilation_options: Default::default() }),
-            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: Some(wgpu::Face::Back), ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }),
-            multisample: wgpu::MultisampleState::default(), multiview: None,
-        });
-
-        let star_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Stars"), layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() },
-            fragment: Some(wgpu::FragmentState { module: &shader, entry_point: "fs_main", targets: &[Some(config.format.into())], compilation_options: Default::default() }),
-            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::PointList, ..Default::default() },
-            depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: false, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }),
-            multisample: wgpu::MultisampleState::default(), multiview: None,
-        });
-
-        // 4. Geometry & Buffers
-        let f_verts = crate::floor::create_vertices();
-        let b_verts = crate::world::high_building::create_vertices();
-        let p_verts = crate::world::pyramid::create_vertices();
-        let sl_verts = crate::world::street_light::create_vertices(); 
+        let f_verts = world_state.get_ground_vertices();
+        let b_verts = world_state.get_building01_vertices();
+        let p_verts = world_state.get_building02_vertices();
+        let sl_verts = world_state.get_streetlight_vertices(); 
         let c_verts = crate::player::create_vertices();
         let s_verts = crate::sky::create_vertices();
 
@@ -150,8 +94,6 @@ impl<'a> Renderer<'a> {
 
         let aspect = size.width as f32 / size.height as f32;
         let projection_matrix = Mat4::perspective_rh(45.0_f32.to_radians(), aspect, 0.1, 2000.0); 
-        
-        // Sun Camera Lens
         let light_projection_matrix = Mat4::orthographic_rh(-200.0, 200.0, -200.0, 200.0, 1.0, 2000.0);
 
         Self {
@@ -185,14 +127,8 @@ impl<'a> Renderer<'a> {
         let sun_color = if is_day { [1.0, 1.0, 0.9, 1.0] } else { [0.0, 0.0, 0.0, 0.0] }; 
         let ambient_color = if is_day { [0.3, 0.3, 0.4, 1.0] } else { [0.05, 0.05, 0.1, 1.0] }; 
 
-        // ---------------------------------------------------------
-        // Dynamic Shadow Targeting: 
-        // Tether the light's camera exactly 600 units away from the 
-        // player, aimed directly at the player.
-        // ---------------------------------------------------------
         let light_distance = 600.0;
         let light_pos = player_pos + (sun_dir_vec * light_distance);
-        
         let light_view = Mat4::look_at_rh(light_pos, player_pos, Vec3::Y);
         let light_mvp_matrix = (self.light_projection_matrix * light_view).to_cols_array_2d();
 
@@ -202,14 +138,10 @@ impl<'a> Renderer<'a> {
         ];
 
         let world_model = Mat4::IDENTITY;
-        self.queue.write_buffer(&self.world_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
-            mvp_matrix: (view_proj * world_model).to_cols_array_2d(), model_matrix: world_model.to_cols_array_2d(), light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights
-        }]));
+        self.queue.write_buffer(&self.world_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { mvp_matrix: (view_proj * world_model).to_cols_array_2d(), model_matrix: world_model.to_cols_array_2d(), light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights }]));
         
         let cube_model = Mat4::from_translation(player_pos + Vec3::new(0.0, 0.5, 0.0)) * Mat4::from_rotation_y(player_yaw);
-        self.queue.write_buffer(&self.cube_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
-            mvp_matrix: (view_proj * cube_model).to_cols_array_2d(), model_matrix: cube_model.to_cols_array_2d(), light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights
-        }]));
+        self.queue.write_buffer(&self.cube_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { mvp_matrix: (view_proj * cube_model).to_cols_array_2d(), model_matrix: cube_model.to_cols_array_2d(), light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights }]));
     }
 
     pub fn render(&mut self, is_day: bool) -> Result<(), wgpu::SurfaceError> {
@@ -219,42 +151,22 @@ impl<'a> Renderer<'a> {
 
         let clear_color = if is_day { wgpu::Color { r: 0.4, g: 0.7, b: 1.0, a: 1.0 } } else { crate::sky::colors::SKY_BLACK };
 
-        // ==========================================
-        // PASS 1: SHADOW MAP
-        // ==========================================
         {
-            let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Shadow Pass"),
-                color_attachments: &[], // No colors written
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.shadow_map.view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
-                timestamp_writes: None, occlusion_query_set: None,
-            });
-
+            let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { label: Some("Shadow Pass"), color_attachments: &[], depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.shadow_map.view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }), timestamp_writes: None, occlusion_query_set: None });
             shadow_pass.set_pipeline(&self.shadow_pipeline);
-            
             shadow_pass.set_bind_group(0, &self.world_bind_group, &[]);
             shadow_pass.set_vertex_buffer(0, self.floor_buffer.slice(..)); shadow_pass.draw(0..self.floor_count, 0..1);
             shadow_pass.set_vertex_buffer(0, self.building_buffer.slice(..)); shadow_pass.draw(0..self.building_count, 0..1);
             shadow_pass.set_vertex_buffer(0, self.pyramid_buffer.slice(..)); shadow_pass.draw(0..self.pyramid_count, 0..1);
             shadow_pass.set_vertex_buffer(0, self.street_light_buffer.slice(..)); shadow_pass.draw(0..self.street_light_count, 0..1);
-            
             shadow_pass.set_bind_group(0, &self.cube_bind_group, &[]);
             shadow_pass.set_vertex_buffer(0, self.cube_buffer.slice(..)); shadow_pass.draw(0..self.cube_count, 0..1);
         }
 
-        // ==========================================
-        // PASS 2: MAIN SCENE
-        // ==========================================
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Main Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store } })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth_texture_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }),
-                timestamp_writes: None, occlusion_query_set: None,
-            });
-
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { label: Some("Main Pass"), color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear_color), store: wgpu::StoreOp::Store } })], depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.depth_texture_view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }), stencil_ops: None }), timestamp_writes: None, occlusion_query_set: None });
             pass.set_pipeline(&self.solid_pipeline);
-            pass.set_bind_group(2, &self.shadow_map.bind_group, &[]); // BIND SHADOW MAP
+            pass.set_bind_group(2, &self.shadow_map.bind_group, &[]);
             
             pass.set_bind_group(0, &self.world_bind_group, &[]);
             pass.set_bind_group(1, &self.floor_tex.bind_group, &[]); pass.set_vertex_buffer(0, self.floor_buffer.slice(..)); pass.draw(0..self.floor_count, 0..1);
@@ -271,11 +183,9 @@ impl<'a> Renderer<'a> {
             pass.set_pipeline(&self.star_pipeline);
             pass.set_bind_group(0, &self.world_bind_group, &[]); 
             pass.set_bind_group(1, &self.star_tex.bind_group, &[]);
-            pass.set_bind_group(2, &self.shadow_map.bind_group, &[]); // Keep bound to avoid pipeline panic
+            pass.set_bind_group(2, &self.shadow_map.bind_group, &[]);
             pass.set_vertex_buffer(0, self.star_buffer.slice(..));
-            
-            if is_day { pass.draw((self.star_count - 36)..self.star_count, 0..1); } 
-            else { pass.draw(0..(self.star_count - 36), 0..1); }
+            if is_day { pass.draw((self.star_count - 36)..self.star_count, 0..1); } else { pass.draw(0..(self.star_count - 36), 0..1); }
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -285,9 +195,5 @@ impl<'a> Renderer<'a> {
 }
 
 fn create_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::TextureView {
-    device.create_texture(&wgpu::TextureDescriptor {
-        label: None, size: wgpu::Extent3d { width: config.width, height: config.height, depth_or_array_layers: 1 },
-        mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Depth32Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, view_formats: &[],
-    }).create_view(&wgpu::TextureViewDescriptor::default())
+    device.create_texture(&wgpu::TextureDescriptor { label: None, size: wgpu::Extent3d { width: config.width, height: config.height, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Depth32Float, usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING, view_formats: &[] }).create_view(&wgpu::TextureViewDescriptor::default())
 }
