@@ -1,8 +1,9 @@
 pub mod config;
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 use crate::world::AABB;
 
 pub struct Camera {
+    pub pos: Vec3,
     pub yaw: f32,
     pub pitch: f32,
     pub distance: f32,
@@ -10,13 +11,23 @@ pub struct Camera {
 
 impl Camera {
     pub fn new() -> Self {
-        Self { yaw: 0.0, pitch: 0.5, distance: config::DEFAULT_DISTANCE }
+        Self { 
+            pos: Vec3::new(0.0, 10.0, 0.0), 
+            yaw: 0.0, 
+            pitch: 0.5, 
+            distance: config::DEFAULT_DISTANCE 
+        }
     }
     
-    pub fn process_mouse(&mut self, dx: f32, dy: f32) {
+    pub fn process_mouse(&mut self, dx: f32, dy: f32, is_freeform: bool) {
         self.yaw -= dx * config::SENSITIVITY;
         self.pitch += dy * config::SENSITIVITY;
-        self.pitch = self.pitch.clamp(config::PITCH_MIN, config::PITCH_MAX);
+
+        if is_freeform {
+            self.pitch = self.pitch.clamp(-std::f32::consts::FRAC_PI_2 + 0.05, std::f32::consts::FRAC_PI_2 - 0.05);
+        } else {
+            self.pitch = self.pitch.clamp(config::PITCH_MIN, config::PITCH_MAX);
+        }
     }
 
     pub fn get_offset(&self, distance: f32) -> Vec3 {
@@ -27,10 +38,24 @@ impl Camera {
         )
     }
 
+    pub fn update_freeform(&mut self, dt: f32, input_dir: Vec2, speed: f32) {
+        let forward = Vec3::new(
+            -self.yaw.sin() * self.pitch.cos(),
+            -self.pitch.sin(),
+            -self.yaw.cos() * self.pitch.cos()
+        ).normalize();
+        
+        let right = forward.cross(Vec3::Y).normalize();
+        
+        let move_dir = forward * input_dir.y + right * input_dir.x;
+        if move_dir.length_squared() > 0.0 {
+            self.pos += move_dir.normalize() * speed * dt;
+        }
+    }
+
     pub fn update(&mut self, dt: f32, player_pos: Vec3, colliders: &[AABB]) {
         let steps = 20;
         let step_size = (config::DEFAULT_DISTANCE - config::MIN_DISTANCE) / steps as f32;
-        
         let mut target_dist = config::MIN_DISTANCE;
 
         for i in 0..=steps {
@@ -58,12 +83,7 @@ impl Camera {
             }
         }
 
-        let speed = if target_dist < self.distance {
-            config::ZOOM_IN_SPEED
-        } else {
-            config::ZOOM_OUT_SPEED
-        };
-        
+        let speed = if target_dist < self.distance { config::ZOOM_IN_SPEED } else { config::ZOOM_OUT_SPEED };
         self.distance += (target_dist - self.distance) * speed * dt;
     }
 }

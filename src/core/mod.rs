@@ -11,7 +11,7 @@ use crate::camera::Camera;
 use crate::control::InputState;
 use crate::player::Player;
 use crate::render::Renderer;
-use crate::world::WorldState; // NEW: Import WorldState
+use crate::world::WorldState; 
 
 pub struct GameState<'a> {
     window: Option<Arc<Window>>,
@@ -72,23 +72,26 @@ impl<'a> ApplicationHandler for GameState<'a> {
                 }
                 self.last_frame_time = Instant::now();
                 
-                // Get world constraints via the new WorldState system
-                let world_state = WorldState::new();
-                let colliders = world_state.get_colliders();
-                
-                // Keep player within a 1000x1000 radius of origin
-                let limit_x = 1000.0; 
-                let limit_z = 1000.0;
+                if config::FREEFORM_CAMERA_MODE {
+                    self.camera.update_freeform(dt, self.input.dir, config::FREEFORM_CAMERA_SPEED);
+                } else {
+                    let world_state = WorldState::new();
+                    let colliders = world_state.get_colliders();
+                    let limit_x = 1000.0; 
+                    let limit_z = 1000.0;
 
-                // 1. Move the Player
-                self.player.update(dt, self.input.dir, self.camera.yaw, self.input.is_free_look, limit_x, limit_z, &colliders);
+                    self.player.update(dt, self.input.dir, self.camera.yaw, self.input.is_free_look, limit_x, limit_z, &colliders);
+                    self.camera.update(dt, self.player.pos, &colliders);
+                }
                 
-                // 2. Adjust Camera Distance smoothly using dt
-                self.camera.update(dt, self.player.pos, &colliders);
-                
-                // 3. Render
                 if let Some(renderer) = &mut self.renderer {
-                    renderer.update_matrices(self.player.pos, self.player.yaw, self.camera.yaw, self.camera.pitch, self.camera.distance, self.input.is_day);
+                    renderer.update_matrices(
+                        self.player.pos, 
+                        self.player.yaw, 
+                        &self.camera, 
+                        self.input.is_day,
+                        self.input.is_flashlight_on
+                    );
                     let _ = renderer.render(self.input.is_day);
                 }
                 self.window.as_ref().unwrap().request_redraw();
@@ -99,7 +102,7 @@ impl<'a> ApplicationHandler for GameState<'a> {
 
     fn device_event(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, _device_id: winit::event::DeviceId, event: DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event {
-            self.camera.process_mouse(delta.0 as f32, delta.1 as f32);
+            self.camera.process_mouse(delta.0 as f32, delta.1 as f32, config::FREEFORM_CAMERA_MODE);
         }
     }
 }

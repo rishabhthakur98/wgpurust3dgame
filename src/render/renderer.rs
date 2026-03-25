@@ -50,7 +50,6 @@ impl<'a> Renderer<'a> {
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { multisampled: false, view_dimension: wgpu::TextureViewDimension::D2, sample_type: wgpu::TextureSampleType::Float { filterable: true } }, count: None }, wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None }], label: None });
         let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { entries: &[wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { multisampled: false, view_dimension: wgpu::TextureViewDimension::D2, sample_type: wgpu::TextureSampleType::Depth }, count: None }, wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison), count: None }], label: None });
 
-        // Load Textures directly from Prefabs
         let floor_tex = Texture::from_bytes(&device, &queue, crate::world::prefabs::static_objs::grounds::ground01::TEXTURE_BYTES, "floor", &texture_layout).unwrap();
         let building_tex = Texture::from_bytes(&device, &queue, crate::world::prefabs::static_objs::buildings::building01::TEXTURE_BYTES, "building", &texture_layout).unwrap();
         let pyramid_tex = Texture::from_bytes(&device, &queue, crate::world::prefabs::static_objs::buildings::building02::TEXTURE_BYTES, "pyramid", &texture_layout).unwrap();
@@ -68,7 +67,6 @@ impl<'a> Renderer<'a> {
         let solid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor { label: Some("Solid"), layout: Some(&render_pipeline_layout), vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: Some(wgpu::FragmentState { module: &shader, entry_point: "fs_main", targets: &[Some(config.format.into())], compilation_options: Default::default() }), primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::TriangleList, cull_mode: Some(wgpu::Face::Back), ..Default::default() }, depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: true, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }), multisample: wgpu::MultisampleState::default(), multiview: None });
         let star_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor { label: Some("Stars"), layout: Some(&render_pipeline_layout), vertex: wgpu::VertexState { module: &shader, entry_point: "vs_main", buffers: &[Vertex::desc()], compilation_options: Default::default() }, fragment: Some(wgpu::FragmentState { module: &shader, entry_point: "fs_main", targets: &[Some(config.format.into())], compilation_options: Default::default() }), primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::PointList, ..Default::default() }, depth_stencil: Some(wgpu::DepthStencilState { format: wgpu::TextureFormat::Depth32Float, depth_write_enabled: false, depth_compare: wgpu::CompareFunction::Less, stencil: Default::default(), bias: Default::default() }), multisample: wgpu::MultisampleState::default(), multiview: None });
 
-        // Instantiate World State
         let world_state = crate::world::WorldState::new();
 
         let f_verts = world_state.get_ground_vertices();
@@ -118,18 +116,36 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    pub fn update_matrices(&self, player_pos: Vec3, player_yaw: f32, camera_yaw: f32, camera_pitch: f32, camera_dist: f32, is_day: bool) {
-        let cam_offset = Vec3::new(camera_yaw.sin() * camera_pitch.cos() * camera_dist, camera_pitch.sin() * camera_dist, camera_yaw.cos() * camera_pitch.cos() * camera_dist);
-        let view_proj = self.projection_matrix * Mat4::look_at_rh(player_pos + cam_offset, player_pos, Vec3::Y);
+    pub fn update_matrices(&self, player_pos: Vec3, player_yaw: f32, camera: &crate::camera::Camera, is_day: bool, is_flashlight_on: bool) {
+        let forward_dir = Vec3::new(
+            -camera.yaw.sin() * camera.pitch.cos(),
+            -camera.pitch.sin(),
+            -camera.yaw.cos() * camera.pitch.cos()
+        ).normalize();
+        
+        let view_proj = if crate::core::config::FREEFORM_CAMERA_MODE {
+            self.projection_matrix * Mat4::look_at_rh(camera.pos, camera.pos + forward_dir, Vec3::Y)
+        } else {
+            let cam_offset = Vec3::new(camera.yaw.sin() * camera.pitch.cos() * camera.distance, camera.pitch.sin() * camera.distance, camera.yaw.cos() * camera.pitch.cos() * camera.distance);
+            self.projection_matrix * Mat4::look_at_rh(player_pos + cam_offset, player_pos, Vec3::Y)
+        };
 
         let sun_dir_vec = Vec3::new(0.8, 1.0, 0.5).normalize();
         let sun_dir = [sun_dir_vec.x, sun_dir_vec.y, sun_dir_vec.z, 0.0]; 
         let sun_color = if is_day { [1.0, 1.0, 0.9, 1.0] } else { [0.0, 0.0, 0.0, 0.0] }; 
         let ambient_color = if is_day { [0.3, 0.3, 0.4, 1.0] } else { [0.05, 0.05, 0.1, 1.0] }; 
 
+        let cam_pos = if crate::core::config::FREEFORM_CAMERA_MODE {
+            camera.pos
+        } else {
+            let cam_offset = Vec3::new(camera.yaw.sin() * camera.pitch.cos() * camera.distance, camera.pitch.sin() * camera.distance, camera.yaw.cos() * camera.pitch.cos() * camera.distance);
+            player_pos + cam_offset
+        };
+
         let light_distance = 600.0;
-        let light_pos = player_pos + (sun_dir_vec * light_distance);
-        let light_view = Mat4::look_at_rh(light_pos, player_pos, Vec3::Y);
+        let light_target = if crate::core::config::FREEFORM_CAMERA_MODE { camera.pos } else { player_pos };
+        let light_pos = light_target + (sun_dir_vec * light_distance);
+        let light_view = Mat4::look_at_rh(light_pos, light_target, Vec3::Y);
         let light_mvp_matrix = (self.light_projection_matrix * light_view).to_cols_array_2d();
 
         let point_lights = [
@@ -137,11 +153,25 @@ impl<'a> Renderer<'a> {
             PointLight { position: [351.5, 9.8, 550.0, 0.0], color: [1.0, 0.8, 0.4, 50.0] }, 
         ];
 
+        let flashlight_pos = [cam_pos.x, cam_pos.y, cam_pos.z, 1.0];
+        let flashlight_dir = [forward_dir.x, forward_dir.y, forward_dir.z, 0.0];
+        let flashlight_color = if is_flashlight_on { [1.0, 0.95, 0.9, 150.0] } else { [0.0, 0.0, 0.0, 0.0] };
+
         let world_model = Mat4::IDENTITY;
-        self.queue.write_buffer(&self.world_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { mvp_matrix: (view_proj * world_model).to_cols_array_2d(), model_matrix: world_model.to_cols_array_2d(), light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights }]));
+        self.queue.write_buffer(&self.world_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
+            mvp_matrix: (view_proj * world_model).to_cols_array_2d(), 
+            model_matrix: world_model.to_cols_array_2d(), 
+            light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights,
+            flashlight_pos, flashlight_dir, flashlight_color
+        }]));
         
         let cube_model = Mat4::from_translation(player_pos + Vec3::new(0.0, 0.5, 0.0)) * Mat4::from_rotation_y(player_yaw);
-        self.queue.write_buffer(&self.cube_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { mvp_matrix: (view_proj * cube_model).to_cols_array_2d(), model_matrix: cube_model.to_cols_array_2d(), light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights }]));
+        self.queue.write_buffer(&self.cube_uniform_buffer, 0, bytemuck::cast_slice(&[UniformData { 
+            mvp_matrix: (view_proj * cube_model).to_cols_array_2d(), 
+            model_matrix: cube_model.to_cols_array_2d(), 
+            light_mvp_matrix, sun_dir, sun_color, ambient_color, point_lights,
+            flashlight_pos, flashlight_dir, flashlight_color
+        }]));
     }
 
     pub fn render(&mut self, is_day: bool) -> Result<(), wgpu::SurfaceError> {
@@ -159,8 +189,12 @@ impl<'a> Renderer<'a> {
             shadow_pass.set_vertex_buffer(0, self.building_buffer.slice(..)); shadow_pass.draw(0..self.building_count, 0..1);
             shadow_pass.set_vertex_buffer(0, self.pyramid_buffer.slice(..)); shadow_pass.draw(0..self.pyramid_count, 0..1);
             shadow_pass.set_vertex_buffer(0, self.street_light_buffer.slice(..)); shadow_pass.draw(0..self.street_light_count, 0..1);
-            shadow_pass.set_bind_group(0, &self.cube_bind_group, &[]);
-            shadow_pass.set_vertex_buffer(0, self.cube_buffer.slice(..)); shadow_pass.draw(0..self.cube_count, 0..1);
+            
+            if !crate::core::config::FREEFORM_CAMERA_MODE {
+                shadow_pass.set_bind_group(0, &self.cube_bind_group, &[]);
+                shadow_pass.set_vertex_buffer(0, self.cube_buffer.slice(..));
+                shadow_pass.draw(0..self.cube_count, 0..1);
+            }
         }
 
         {
@@ -174,11 +208,13 @@ impl<'a> Renderer<'a> {
             pass.set_bind_group(1, &self.pyramid_tex.bind_group, &[]); pass.set_vertex_buffer(0, self.pyramid_buffer.slice(..)); pass.draw(0..self.pyramid_count, 0..1);
             pass.set_bind_group(1, &self.street_light_tex.bind_group, &[]); pass.set_vertex_buffer(0, self.street_light_buffer.slice(..)); pass.draw(0..self.street_light_count, 0..1);
 
-            pass.set_bind_group(0, &self.cube_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.cube_buffer.slice(..));
-            pass.set_bind_group(1, &self.player_top_tex.bind_group, &[]); pass.draw(0..6, 0..1); 
-            pass.set_bind_group(1, &self.player_side_tex.bind_group, &[]); pass.draw(6..30, 0..1); 
-            pass.set_bind_group(1, &self.player_top_tex.bind_group, &[]); pass.draw(30..36, 0..1); 
+            if !crate::core::config::FREEFORM_CAMERA_MODE {
+                pass.set_bind_group(0, &self.cube_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.cube_buffer.slice(..));
+                pass.set_bind_group(1, &self.player_top_tex.bind_group, &[]); pass.draw(0..6, 0..1); 
+                pass.set_bind_group(1, &self.player_side_tex.bind_group, &[]); pass.draw(6..30, 0..1); 
+                pass.set_bind_group(1, &self.player_top_tex.bind_group, &[]); pass.draw(30..36, 0..1); 
+            }
 
             pass.set_pipeline(&self.star_pipeline);
             pass.set_bind_group(0, &self.world_bind_group, &[]); 

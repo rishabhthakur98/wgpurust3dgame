@@ -5,10 +5,13 @@ pub struct InputState {
     pub dir: Vec2,
     pub is_free_look: bool, 
     pub is_day: bool,
+    pub is_flashlight_on: bool,
 }
 
 impl InputState {
-    pub fn new() -> Self { Self { dir: Vec2::ZERO, is_free_look: false, is_day: true } }
+    pub fn new() -> Self { 
+        Self { dir: Vec2::ZERO, is_free_look: false, is_day: true, is_flashlight_on: false } 
+    }
 
     pub fn process_keyboard(&mut self, key: PhysicalKey, is_pressed: bool) {
         let val = if is_pressed { 1.0 } else { 0.0 };
@@ -20,6 +23,9 @@ impl InputState {
             PhysicalKey::Code(KeyCode::ControlLeft) => self.is_free_look = is_pressed, 
             PhysicalKey::Code(KeyCode::KeyT) => {
                 if is_pressed { self.is_day = !self.is_day; } 
+            }
+            PhysicalKey::Code(KeyCode::KeyF) => {
+                if is_pressed { self.is_flashlight_on = !self.is_flashlight_on; }
             }
             _ => {}
         }
