@@ -14,11 +14,18 @@ struct UniformData {
     flashlight_pos: vec4<f32>,
     flashlight_dir: vec4<f32>,
     flashlight_color: vec4<f32>,
+    sky_mvp_matrix: mat4x4<f32>,
+    sky_zenith: vec4<f32>,
+    sky_horizon: vec4<f32>,
+    sky_night: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> ubo: UniformData;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
+    @location(1) color: vec3<f32>,
+    @location(2) normal: vec3<f32>,
+    @location(3) tex_coords: vec2<f32>,
 };
 
 @vertex

@@ -14,6 +14,10 @@ struct UniformData {
     flashlight_pos: vec4<f32>,
     flashlight_dir: vec4<f32>,
     flashlight_color: vec4<f32>,
+    sky_mvp_matrix: mat4x4<f32>,
+    sky_zenith: vec4<f32>,
+    sky_horizon: vec4<f32>,
+    sky_night: vec4<f32>,
 };
 @group(0) @binding(0) var<uniform> ubo: UniformData;
 
@@ -75,6 +79,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let sun_dir = normalize(ubo.sun_dir.xyz);
     let sun_diffuse = max(dot(normal, sun_dir), 0.0) * ubo.sun_color.w;
+    
     var lighting = ubo.ambient_color.xyz + (ubo.sun_color.xyz * sun_diffuse * shadow);
 
     for (var i = 0u; i < 2u; i = i + 1u) {
@@ -87,7 +92,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         lighting += pl.color.xyz * (diffuse * pl.color.w * attenuation);
     }
     
-    // --- FLASHLIGHT (SPOTLIGHT) CALCULATION ---
     if (ubo.flashlight_color.w > 0.0) {
         let flash_vec = ubo.flashlight_pos.xyz - in.world_pos;
         let distance = length(flash_vec);
@@ -96,7 +100,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let spot_dir = normalize(-ubo.flashlight_dir.xyz);
         let theta = dot(light_dir, spot_dir);
         
-        // Inner and outer cutoffs for spotlight beam
         let inner_cutoff = cos(radians(15.0));
         let outer_cutoff = cos(radians(25.0));
         

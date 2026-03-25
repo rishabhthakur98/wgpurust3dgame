@@ -85,5 +85,8 @@ impl Camera {
 
         let speed = if target_dist < self.distance { config::ZOOM_IN_SPEED } else { config::ZOOM_OUT_SPEED };
         self.distance += (target_dist - self.distance) * speed * dt;
+        
+        // NEW: Sync the actual camera position so switching to Freeform mode is seamless
+        self.pos = player_pos + self.get_offset(self.distance);
     }
 }

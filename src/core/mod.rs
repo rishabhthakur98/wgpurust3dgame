@@ -72,8 +72,9 @@ impl<'a> ApplicationHandler for GameState<'a> {
                 }
                 self.last_frame_time = Instant::now();
                 
-                if config::FREEFORM_CAMERA_MODE {
-                    self.camera.update_freeform(dt, self.input.dir, config::FREEFORM_CAMERA_SPEED);
+                // NEW: Use runtime toggle instead of constant
+                if self.input.is_freeform {
+                    self.camera.update_freeform(dt, self.input.dir, config::FREEFORM_SPEED);
                 } else {
                     let world_state = WorldState::new();
                     let colliders = world_state.get_colliders();
@@ -90,9 +91,10 @@ impl<'a> ApplicationHandler for GameState<'a> {
                         self.player.yaw, 
                         &self.camera, 
                         self.input.is_day,
-                        self.input.is_flashlight_on
+                        self.input.is_flashlight_on,
+                        self.input.is_freeform // Pass it down to renderer
                     );
-                    let _ = renderer.render(self.input.is_day);
+                    let _ = renderer.render(self.input.is_day, self.input.is_freeform);
                 }
                 self.window.as_ref().unwrap().request_redraw();
             }
@@ -102,7 +104,7 @@ impl<'a> ApplicationHandler for GameState<'a> {
 
     fn device_event(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop, _device_id: winit::event::DeviceId, event: DeviceEvent) {
         if let DeviceEvent::MouseMotion { delta } = event {
-            self.camera.process_mouse(delta.0 as f32, delta.1 as f32, config::FREEFORM_CAMERA_MODE);
+            self.camera.process_mouse(delta.0 as f32, delta.1 as f32, self.input.is_freeform);
         }
     }
 }

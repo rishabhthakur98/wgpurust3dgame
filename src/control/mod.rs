@@ -6,11 +6,12 @@ pub struct InputState {
     pub is_free_look: bool, 
     pub is_day: bool,
     pub is_flashlight_on: bool,
+    pub is_freeform: bool, // NEW: Runtime toggle state
 }
 
 impl InputState {
     pub fn new() -> Self { 
-        Self { dir: Vec2::ZERO, is_free_look: false, is_day: true, is_flashlight_on: false } 
+        Self { dir: Vec2::ZERO, is_free_look: false, is_day: true, is_flashlight_on: false, is_freeform: false } 
     }
 
     pub fn process_keyboard(&mut self, key: PhysicalKey, is_pressed: bool) {
@@ -26,6 +27,9 @@ impl InputState {
             }
             PhysicalKey::Code(KeyCode::KeyF) => {
                 if is_pressed { self.is_flashlight_on = !self.is_flashlight_on; }
+            }
+            PhysicalKey::Code(KeyCode::KeyC) => { // NEW: Toggle camera with 'C'
+                if is_pressed { self.is_freeform = !self.is_freeform; }
             }
             _ => {}
         }

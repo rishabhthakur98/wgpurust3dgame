@@ -42,4 +42,8 @@ pub struct UniformData {
     pub flashlight_pos: [f32; 4],
     pub flashlight_dir: [f32; 4],
     pub flashlight_color: [f32; 4],
+    pub sky_mvp_matrix: [[f32; 4]; 4],
+    pub sky_zenith: [f32; 4],  
+    pub sky_horizon: [f32; 4], 
+    pub sky_night: [f32; 4],   
 }
