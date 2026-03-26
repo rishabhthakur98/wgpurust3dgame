@@ -1,11 +1,7 @@
-pub mod prefabs;
+use crate::render::vertex::Vertex;
+use std::path::Path;
 
-use crate::render::Vertex;
-use prefabs::static_objs::grounds::ground01::Ground01;
-use prefabs::static_objs::buildings::building01::Building01;
-use prefabs::static_objs::buildings::building02::Building02;
-use prefabs::static_objs::streetlights::streetlight01::Streetlight01;
-
+#[derive(Debug, Clone, Copy)]
 pub struct AABB {
     pub min_x: f32, pub max_x: f32,
     pub min_y: f32, pub max_y: f32,
@@ -13,65 +9,86 @@ pub struct AABB {
 }
 
 pub struct WorldState {
-    pub grounds: Vec<Ground01>,
-    pub building01s: Vec<Building01>,
-    pub building02s: Vec<Building02>,
-    pub streetlights: Vec<Streetlight01>,
+    pub ground_vertices: Vec<Vertex>,
 }
 
 impl WorldState {
     pub fn new() -> Self {
-        let mut my_streetlights = Vec::new();
-        
-        // Loop to create 100 streetlights total (50 pairs)
-        for i in 0..50 {
-            let z_position = 100.0 + (i as f32 * 10.0);
-            
-            // Left pole (x: 347.5). Rotations: (0,0,0). Scale: 1.0
-            my_streetlights.push(Streetlight01::new(347.5, 0.0, z_position, 0.0, 0.0, 0.0, 1.0));
-            // Right pole (x: 352.5). Rotations: (0, PI, 0). Scale: 1.0
-            my_streetlights.push(Streetlight01::new(352.5, 0.0, z_position, 0.0, std::f32::consts::PI, 0.0, 1.0));
-        }
+        // The paths to check for your models
+        let glb_path = "src/world/world01/glb/grounds/ground01/ground01.glb";
+        let gltf_path = "src/world/world01/gltf/grounds/ground01/ground01.gltf";
 
-        Self {
-            // New Ground01 signature: x, y, z, width, length, uv_scale, rot_x, rot_y, rot_z, scale
-            grounds: vec![Ground01::new(0.0, 0.0, 0.0, 2000.0, 2000.0, 10.0, 0.0, 0.0, 0.0, 1.0)],
-            
-            building01s: vec![
-                // New Building01 signature: x, y, z, width, length, height, rot_x, rot_y, rot_z, scale
-                // Normal standing building
-                Building01::new(400.0, 0.0, 800.0, 10.0, 20.0, 100.0, 0.0, 0.0, 0.0, 1.0),
-                
-                // Horizontal building (Roll/rot_z = 1.57 radians)
-                Building01::new(450.0, 10.0, 800.0, 10.0, 20.0, 100.0, 0.0, 0.0, 1.57, 1.0), 
-            ],
-            
-            building02s: vec![
-                // New Building02 signature: x, y, z, base_width, height, rot_x, rot_y, rot_z, scale
-                // Normal Pyramid
-                Building02::new(300.0, 0.0, 300.0, 50.0, 40.0, 0.0, 0.0, 0.0, 1.0),
-                
-                // Tumbled Pyramid (Pitch/rot_x = PI radians)
-                Building02::new(380.0, 40.0, 300.0, 50.0, 40.0, std::f32::consts::PI, 0.0, 0.0, 1.0),
-                
-                // Example of a tiny half-sized pyramid using scale!
-                Building02::new(340.0, 0.0, 250.0, 50.0, 40.0, 0.0, 0.0, 0.0, 0.5),
-            ],
-            
-            streetlights: my_streetlights,
+        // Try GLB first, then GLTF. If neither exist, spawn a fallback flat plane.
+        let vertices = if Path::new(glb_path).exists() {
+            println!("Loading GLB model: {}", glb_path);
+            Self::load_model(glb_path)
+        } else if Path::new(gltf_path).exists() {
+            println!("Loading GLTF model: {}", gltf_path);
+            Self::load_model(gltf_path)
+        } else {
+            println!("Warning: No 3D model found. Spawning default green plane.");
+            Self::create_fallback_plane()
+        };
+
+        Self { ground_vertices: vertices }
+    }
+
+    // The Universal Model Loader
+    fn load_model(path: &str) -> Vec<Vertex> {
+        let (document, buffers, _images) = gltf::import(path).expect("Failed to parse GLTF/GLB");
+        let mut vertices = Vec::new();
+
+        for mesh in document.meshes() {
+            for primitive in mesh.primitives() {
+                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+                // Extract mesh data from the binary blobs
+                let positions: Vec<[f32; 3]> = reader.read_positions().unwrap().collect();
+                let normals: Vec<[f32; 3]> = reader.read_normals().map_or(
+                    vec![[0.0, 1.0, 0.0]; positions.len()], // Fallback normal pointing straight up
+                    |n| n.collect(),
+                );
+                let tex_coords: Vec<[f32; 2]> = reader.read_tex_coords(0).map_or(
+                    vec![[0.0, 0.0]; positions.len()], // Fallback UVs
+                    |t| t.into_f32().collect(),
+                );
+
+                // Flatten the indices into a raw triangle list so wgpu can draw it easily
+                if let Some(indices) = reader.read_indices() {
+                    for idx in indices.into_u32() {
+                        let i = idx as usize;
+                        vertices.push(Vertex {
+                            position: positions[i],
+                            normal: normals[i],
+                            tex_coords: tex_coords[i],
+                            color: [1.0, 1.0, 1.0], // Base white color
+                        });
+                    }
+                } else {
+                    for i in 0..positions.len() {
+                        vertices.push(Vertex {
+                            position: positions[i], normal: normals[i], tex_coords: tex_coords[i], color: [1.0, 1.0, 1.0],
+                        });
+                    }
+                }
+            }
         }
+        vertices
+    }
+
+    fn create_fallback_plane() -> Vec<Vertex> {
+        let s = 50.0;
+        vec![
+            Vertex { position: [-s, 0.0, -s], normal: [0.0, 1.0, 0.0], tex_coords: [0.0, 0.0], color: [0.4, 0.8, 0.4] },
+            Vertex { position: [ s, 0.0, -s], normal: [0.0, 1.0, 0.0], tex_coords: [1.0, 0.0], color: [0.4, 0.8, 0.4] },
+            Vertex { position: [ s, 0.0,  s], normal: [0.0, 1.0, 0.0], tex_coords: [1.0, 1.0], color: [0.4, 0.8, 0.4] },
+            Vertex { position: [-s, 0.0, -s], normal: [0.0, 1.0, 0.0], tex_coords: [0.0, 0.0], color: [0.4, 0.8, 0.4] },
+            Vertex { position: [ s, 0.0,  s], normal: [0.0, 1.0, 0.0], tex_coords: [1.0, 1.0], color: [0.4, 0.8, 0.4] },
+            Vertex { position: [-s, 0.0,  s], normal: [0.0, 1.0, 0.0], tex_coords: [0.0, 1.0], color: [0.4, 0.8, 0.4] },
+        ]
     }
 
     pub fn get_colliders(&self) -> Vec<AABB> {
-        let mut colliders = Vec::new();
-        for b in &self.building01s { colliders.push(b.get_aabb()); }
-        for p in &self.building02s { colliders.push(p.get_aabb()); }
-        for l in &self.streetlights { colliders.push(l.get_aabb()); }
-        colliders
+        vec![] // Cleared out old colliders since buildings are gone
     }
-
-    pub fn get_ground_vertices(&self) -> Vec<Vertex> { self.grounds.iter().flat_map(|g| g.create_vertices()).collect() }
-    pub fn get_building01_vertices(&self) -> Vec<Vertex> { self.building01s.iter().flat_map(|b| b.create_vertices()).collect() }
-    pub fn get_building02_vertices(&self) -> Vec<Vertex> { self.building02s.iter().flat_map(|p| p.create_vertices()).collect() }
-    pub fn get_streetlight_vertices(&self) -> Vec<Vertex> { self.streetlights.iter().flat_map(|l| l.create_vertices()).collect() }
 }
